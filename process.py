@@ -1,63 +1,71 @@
+import os
 import pandas
+import xml.etree.ElementTree as et
 from ast import literal_eval
 from dateparser import parse as dateparse
 from json import loads as json_decode
 from rdflib import Graph
-from zipfile import ZipFile
-
 
 def dataframe_from_json(filename):
-    # the file must be opened and parsed into a dict
-    with open(filename) as f: json = json_decode(f.read())
+    try:
+        # the file must be opened and parsed into a dict
+        with open(filename) as f: json = json_decode(f.read())
 
-    # extract the data attribute
-    rows = json['data']
-    # extract the columns meta data
-    columns = json['meta']['view']['columns']
-    # columns names in meta data
-    column_names = list(map(lambda c: c['name'], columns))
-    # finally, create the dataframe
-    dataframe = pandas.DataFrame(rows, columns=column_names)
-
-    return dataframe
+        # extract the data attribute
+        rows = json['data']
+        # extract the columns meta data
+        columns = json['meta']['view']['columns']
+        # columns names in meta data
+        column_names = list(map(lambda c: c['name'], columns))
+        # finally, create the dataframe
+        dataframe = pandas.DataFrame(rows, columns=column_names)
+        return dataframe
+    except Exception as e:
+        return None
 
 
 def dataframe_from_xml(filename):
-    import xml.etree.ElementTree as et
 
-    xtree = et.parse(filename)
-    xroot = xtree.getroot()[0]
+    try:
+        xtree = et.parse(filename)
+        xroot = xtree.getroot()[0]
 
-    dataframe = pandas.DataFrame()
+        dataframe = pandas.DataFrame()
 
-    for node in xroot:
-        row = []
-        for elem in node.getchildren():
-            if elem is not None:
-                row.append(elem.text)
+        for node in xroot:
+            row = []
+            for elem in node.getchildren():
+                if elem is not None:
+                    row.append(elem.text)
 
-        df_cols = list(map(lambda c: c.tag, node.getchildren()))
-        dataframe = dataframe.append(pandas.Series(row, index=df_cols),
-                                     ignore_index = True)
+            df_cols = list(map(lambda c: c.tag, node.getchildren()))
+            dataframe = dataframe.append(pandas.Series(row, index=df_cols),
+                                         ignore_index = True)
 
-    return dataframe
+        return dataframe
+    except Exception as e:
+        return None
 
 
 def dataframe_from_rfd(filename):
-    # rdflib reader
-    g = Graph()
-    # convert into row list
-    r = g.parse('rows.rdf')
-    # finally, create the dataframe
-    dataframe = pandas.DataFrame(r)
+    try:
+        # rdflib reader
+        g = Graph()
+        # convert into row list
+        r = g.parse(filename)
+        # finally, create the dataframe
+        dataframe = pandas.DataFrame(r)
 
-    return dataframe
+        return dataframe
+    except Exception as e:
+        return None
 
 
-def read_file(filename, file_type):
+def read_file(filename):
     '''
         Given the input file, generate a dataframe depeding on the file type
     '''
+    file_type = filename.rpartition('.')[-1]
 
     if file_type in ('xlsx', 'xls') :
         dataframe = pandas.read_excel(filename)
@@ -72,10 +80,14 @@ def read_file(filename, file_type):
         dataframe = dataframe_from_json(filename)
 
     elif file_type == 'rdf':
+        import ipdb; ipdb.set_trace(context=25)
         dataframe = dataframe_from_rfd(filename)
 
+    elif file_type == 'zip':
+        dataframe = None
+
     else:
-        raise Exception('Bad Argument')
+        raise Exception('Unssuported File Type')
 
     return dataframe
 
@@ -113,12 +125,15 @@ def guess_str_type(value):
         based in the given value, guess the value type
     '''
 
-    _str = str(value)
+    _str = str(value).strip()
     # if 'nan' is received (the numpy None value)
     # there's nothing to do
     if _str == 'nan':
         return None
-    elif dateparse(_str) is not None:
+    elif any([x in _str for x in ('-', '/')]) \
+        and len(_str) > 5 \
+        and len(_str) < 9 \
+        and dateparse(_str) is not None:
         return 'date'
 
     try:
@@ -131,11 +146,32 @@ def guess_str_type(value):
 def identify_colummns_types(dataframe):
 
     _types = dict()
-    for column in dataframe:
-
-        types = dataframe[column].apply(lambda x: guess_str_type(x)) \
-                                    .drop_duplicates() \
-                                    .to_list()
+    df_partial = dataframe[:10]
+    for column in df_partial:
+        types = df_partial[column].apply(lambda x: guess_str_type(x)) \
+                                  .drop_duplicates() \
+                                  .to_list()
         _types[column] = choose_type_priority(types)
 
     return _types
+
+
+def basename(filename):
+    base = os.path.basename(filename)
+    return base.split('.')
+
+
+def generate_sql(dataframe, table_name):
+    df_columns = identify_colummns_types(dataframe)
+    sql = pandas.io.sql.get_schema(dataframe,
+                                   table_name,
+                                   dtype=df_columns)
+    return sql
+
+
+def write_sql(dataframe, filename):
+    b_name = os.path.basename(filename)
+    sql = generate_sql(dataframe, b_name)
+
+    with open(f'{filename}.sql', 'w') as f:
+        f.write(sql)
