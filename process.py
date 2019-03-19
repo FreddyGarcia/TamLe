@@ -40,7 +40,7 @@ def dataframe_from_xml(filename):
 
             df_cols = list(map(lambda c: c.tag, node.getchildren()))
             dataframe = dataframe.append(pandas.Series(row, index=df_cols),
-                                         ignore_index = True)
+                                             ignore_index = True)
 
         return dataframe
     except Exception as e:
@@ -54,6 +54,10 @@ def dataframe_from_rfd(filename):
         # convert into row list
         r = g.parse(filename)
         # finally, create the dataframe
+
+        for subj, pred, obj in r:
+            import ipdb; ipdb.set_trace(context=25)
+
         dataframe = pandas.DataFrame(r)
 
         return dataframe
@@ -80,14 +84,10 @@ def read_file(filename):
         dataframe = dataframe_from_json(filename)
 
     elif file_type == 'rdf':
-        import ipdb; ipdb.set_trace(context=25)
         dataframe = dataframe_from_rfd(filename)
 
-    elif file_type == 'zip':
-        dataframe = None
-
     else:
-        raise Exception('Unssuported File Type')
+        dataframe = None
 
     return dataframe
 
@@ -158,7 +158,7 @@ def identify_colummns_types(dataframe):
 
 def basename(filename):
     base = os.path.basename(filename)
-    return base.split('.')
+    return base.split('.')[:1] + base.split('.')[-1:]
 
 
 def generate_sql(dataframe, table_name):

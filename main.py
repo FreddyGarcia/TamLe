@@ -5,11 +5,12 @@ import process
 from zipfile import ZipFile
 from os.path import join as path_join
 
-ALLOWED_EXTS = ('xls', 'xlsx', 'json', 'xml', 'rdf')
+# hide pandas warnings (all warnings in general)
+import warnings
+warnings.filterwarnings('ignore')
 
-def unzip(filename):
-    with ZipFile(filename,"r") as zip_ref:
-        zip_ref.extractall(".")
+
+ALLOWED_EXTS = ('xls', 'xlsx', 'json', 'xml', 'rdf')
 
 
 def create_folder_structure(root_folder_name):
@@ -22,22 +23,17 @@ def create_folder_structure(root_folder_name):
 
 
 def arguments():
-    cod = lambda x: print(f'hello')
-
     parser = argparse.ArgumentParser(description='Retrieve files from http://catalog.data.gov'
                                      ' and convert them to csv')
-    parser.add_argument('url', type=str, nargs='?',
-                        help='site url')
+    parser.add_argument('url', type=str, help='site url')
     parser.add_argument('--filename', '-f', nargs='?',
-                        help='specify filename pattern to download')
-    parser.add_argument('--delimiter', '-d', nargs='?', default='|',
                         help='specify filename pattern to download')
 
     return parser.parse_args()
 
 
-def log_unssuported(filename):
-    pass
+def log_unssuported(title, filename):
+    print(f'\t # Bad File')
 
 
 def process_zip(title, filename):
@@ -54,7 +50,7 @@ def process_zip(title, filename):
 
         if b_ext in ALLOWED_EXTS:
             f_zip.extract(f_name, path_join(dwn_dest, z_name))
-            process_file(title, path_join(dwn_dest, z_name))
+            process_file(title, path_join(dwn_dest, z_name, f_name))
 
 
 def process_file(title, filename):
@@ -66,10 +62,19 @@ def process_file(title, filename):
 
     df = process.read_file(path_join(dwn_dest, f_name))
     if df is not None:
+        print('\tExporting to csv')
         process.export_csv(df, path_join(csv_dest, b_name))
+        print('\tExporting to sql')
         process.write_sql(df, path_join(sql_dest, b_name))
     else:
-        log_unssuported(f_name)
+        log_unssuported(title, f_name)
+
+
+def sanity_name(filename):
+    to_replace = r'\/:?*|"'
+    for chr_ in to_replace:
+        filename = filename.replace(chr_, '')
+    return filename
 
 
 def main():
@@ -79,20 +84,30 @@ def main():
     filename = args.filename
     title, urls = download.retreive_download_url(url, filename)
 
+    title = sanity_name(title)
     create_folder_structure(title)
     dwn_dest = path_join(title, 'download')
 
     for file_info in urls:
-        f_name = file_info[0]
+
+        f_name = sanity_name(file_info[0])
         b_name, b_ext = process.basename(f_name)
+        f_name = '.'.join([b_name, b_ext])
+        url = file_info[1]
 
-        download.download_file(dwn_dest, *file_info)
+        print(f'\nProcessing "{f_name}"')
+        print('\tDownloading')
+        success = download.download_file(dwn_dest, f_name, url)
 
-        if b_ext == 'zip':
-            process_zip(title, f_name)
+        if success:
+            if b_ext == 'zip':
+                process_zip(title, f_name)
+            else:
+                process_file(title, f_name)
         else:
-            process_file(title, f_name)
+            log_unssuported(title, f_name)
 
 
 if __name__ == '__main__':
     main()
+1
