@@ -1,6 +1,5 @@
 import pandas
 import os
-from xml.etree import ElementTree as et
 from argparse import ArgumentParser
 from ast import literal_eval
 from dateparser import parse as dateparse
@@ -10,6 +9,7 @@ from os.path import join as path_join
 from rdflib import Graph
 from re import compile as re_compile
 from requests import get as requests_get
+from xml.etree import ElementTree as et
 from zipfile import ZipFile
 
 # hide pandas warnings (all warnings in general)
@@ -18,7 +18,7 @@ warnings.filterwarnings('ignore')
 
 
 ALLOWED_EXTS = ('xls', 'xlsx', 'json', 'xml', 'rdf')
-
+ERROR_FILE_NAME = 'bad_files.txt'
 
 def dataframe_from_json(filename):
     try:
@@ -348,6 +348,9 @@ def arguments():
 
 
 def log_unssuported(title, filename):
+    with open(ERROR_FILE_NAME, 'a+') as f:
+        f.write(filename)
+        f.write('\n')
     print(f'\t # Bad File')
 
 
