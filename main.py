@@ -168,17 +168,28 @@ def identify_colummns_types(dataframe):
         Iterate each dataframe column to get its types
     '''
 
-    _types = dict()
+    _types = []
     # perform the identification process with first 100 rows
     df_partial = dataframe[:100]
 
     for column in df_partial:
+        # get type
         types = df_partial[column].apply(lambda x: guess_str_type(x)) \
                                   .drop_duplicates() \
                                   .to_list()
-        _types[column] = choose_type_priority(types)
+        # remove blank spaces
+        column = str(column).replace(' ', '_')
+        # choose right
+        type_ = choose_type_priority(types)
 
-    return _types
+        _types.append(f'{column} {type_}')
+
+    # putting all together
+    columns = ',\n\t'.join(_types)
+
+    return f'''(
+    {columns}
+)'''
 
 
 def filename_and_ext(filename):
@@ -190,27 +201,12 @@ def filename_and_ext(filename):
     return base.split('.')[:1] + base.split('.')[-1:]
 
 
-def generate_sql(dataframe, table_name):
-    '''
-        Given a dataframe, generate sql script.
-    '''
-
-    # columns types
-    df_columns = identify_colummns_types(dataframe)
-    # get the sql script from dataframe
-    sql = pandas.io.sql.get_schema(dataframe,
-                                   table_name,
-                                   dtype=df_columns)
-    return sql
-
-
 def write_sql(dataframe, filename):
     '''
         Save sql script and write it in filename
     '''
 
-    b_name = os.path.basename(filename)
-    sql = generate_sql(dataframe, b_name)
+    sql = identify_colummns_types(dataframe)
 
     with open(f'{filename}.sql', 'w') as f:
         f.write(sql)
