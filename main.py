@@ -1,5 +1,7 @@
 import pandas
 import os
+from csv import QUOTE_ALL
+from datetime import datetime
 from argparse import ArgumentParser
 from ast import literal_eval
 from dateparser import parse as dateparse
@@ -113,18 +115,18 @@ def export_csv(dataframe, output_name):
     '''
         Export given dataframe to csv
     '''
+    dataframe.to_csv(output_name + '.csv', encoding='utf-8', index=False,
+                      quotechar='"', quoting=QUOTE_ALL)
 
-    dataframe.to_csv(output_name + '.csv', encoding='utf-8', index=False)
 
-
-def choose_type_priority(types):
+def choose_type_priority(types, field_max):
     '''
         The columns may look having multple types
         so we choose the most relevant.
     '''
 
     if 'str' in types:
-        return 'VARCHAR(100)'
+        return f'VARCHAR({field_max})'
 
     elif 'float' in types:
         return 'DECIMAL(17,4)'
@@ -132,11 +134,12 @@ def choose_type_priority(types):
     elif 'int' in types:
         return 'INT'
 
-    elif 'date' in types:
-        return 'DATETIME'
+    elif any(['format' in str(x) for x in types]):
+        val = next((x for x in types if 'format' in x), '')
+        return f'DATETIME {val}'
 
     else:
-        return 'VARCHAR(100)'
+        return f'VARCHAR({field_max})'
 
 
 def guess_str_type(value):
@@ -153,7 +156,7 @@ def guess_str_type(value):
         and len(_str) > 7 \
         and len(_str) < 11 \
         and dateparse(_str) is not None:
-        return 'date'
+        return f"format '{str_to_frmt(_str)}'"
 
     try:
         # trying to figure out value data type
@@ -177,10 +180,18 @@ def identify_colummns_types(dataframe):
         types = df_partial[column].apply(lambda x: guess_str_type(x)) \
                                   .drop_duplicates() \
                                   .to_list()
-        # remove blank spaces
-        column = str(column).replace(' ', '_')
+
+        try:
+            field_max = int(df_partial[column].str.len().max())
+        except Exception as e:
+            field_max = 30
+
+        # clean columns
+        column = str(column).replace(' ', '_') \
+                            .replace('-', '_') \
+                            .replace('?', '')
         # choose right
-        type_ = choose_type_priority(types)
+        type_ = choose_type_priority(types, field_max)
 
         _types.append(f'{column} {type_}')
 
@@ -210,7 +221,6 @@ def write_sql(dataframe, filename):
 
     with open(f'{filename}.sql', 'w') as f:
         f.write(sql)
-
 
 def single_file(search_tag, filename):
     '''
@@ -412,6 +422,32 @@ def sanity_name(filename):
     return filename
 
 
+def str_to_frmt(str):
+    date_formats = ["%Y-%m-%d", "%Y-%d-%m", "%m-%d-%Y", "%d-%m-%Y",
+                    "%Y/%m/%d", "%Y/%d/%m", "%m/%d/%Y", "%d/%m/%Y",
+                    "%Y.%m.%d", "%Y.%d.%m", "%m.%d.%Y", "%d.%m.%Y",
+                    "%Y/%m",    "%m/%Y",
+                    "%Y-%m",    "%m-%Y",
+                    "%c", "%x"]
+    match = []
+    for fmt in date_formats:
+        try:
+            datetime.strptime(str, fmt)
+        except ValueError as e:
+            # print(e)
+            continue
+        match.append(fmt)
+
+    try:
+        date_fmt = match[0]
+        date_fmt = date_fmt.replace('%d', 'dd') \
+                           .replace('%Y', 'yyyy') \
+                           .replace('%y', 'yy') \
+                           .replace('%m', 'mm')
+        return date_fmt
+    except Exception as e:
+        return None
+
 def main():
     args = arguments()
 
@@ -444,4 +480,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+        main()
