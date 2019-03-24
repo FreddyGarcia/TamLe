@@ -1,3 +1,19 @@
+'''
+    This script download files from `https://catalog.data.gov/dataset`,
+    convert them to csv and generate the sql create table script.
+
+    ALLOWED FILES EXTENSION = XLS XLSX JSON XML RDF ZIP
+
+    To run this script please install the dependencies
+    in the requirements.txt file:
+
+    `$ pip install -r requirements.txt`
+
+    author: Freddy Garcia Abreu
+    email: freddie-wpy@outlook.es
+    date: 03/24/2019
+'''
+
 import pandas
 import os
 from csv import QUOTE_ALL
@@ -129,7 +145,7 @@ def choose_type_priority(types, field_max):
         return f'VARCHAR({field_max})'
 
     elif 'float' in types:
-        return 'DECIMAL(17,4)'
+        return f'DECIMAL({field_max})'
 
     elif 'int' in types:
         return 'INT'
@@ -166,6 +182,20 @@ def guess_str_type(value):
         return 'str'
 
 
+
+def decimal_frmt(value):
+    '''
+        Based on a decimal value, get the current sql lenght code,
+        so 23.234 is translated as 2,3
+    '''
+    _str = str(value)
+    i = _str.index('.')
+    int_ = len(_str[:i])
+    float_ = len(_str[i+1:])
+    cad = f'{int_},{float_}'
+    return cad
+
+
 def identify_colummns_types(dataframe):
     '''
         Iterate each dataframe column to get its types
@@ -173,7 +203,7 @@ def identify_colummns_types(dataframe):
 
     _types = []
     # perform the identification process with first 100 rows
-    df_partial = dataframe[:100]
+    df_partial = dataframe[:200]
 
     for column in df_partial:
         # get type
@@ -181,14 +211,24 @@ def identify_colummns_types(dataframe):
                                   .drop_duplicates() \
                                   .to_list()
 
+        field_max = 30
+
         try:
             field_max = int(df_partial[column].str.len().max())
         except Exception as e:
-            field_max = 30
+            pass
+
+        try:
+            if 'float' in df_partial[column].dtype.name:
+                field_len = df_partial[column].map(str).max()
+                field_max = decimal_frmt(float(field_len))
+        except Exception as e:
+            field_max = len(field_len)
 
         # clean columns
         column = str(column).replace(' ', '_') \
                             .replace('-', '_') \
+                            .replace('.', '') \
                             .replace('?', '')
         # choose right
         type_ = choose_type_priority(types, field_max)
@@ -221,6 +261,7 @@ def write_sql(dataframe, filename):
 
     with open(f'{filename}.sql', 'w') as f:
         f.write(sql)
+
 
 def single_file(search_tag, filename):
     '''
@@ -423,6 +464,10 @@ def sanity_name(filename):
 
 
 def str_to_frmt(str):
+    '''
+        Based on a datetime, get the current date format,
+        so 21/02/2019 is translated as dd/mm/yyyy
+    '''
     date_formats = ["%Y-%m-%d", "%Y-%d-%m", "%m-%d-%Y", "%d-%m-%Y",
                     "%Y/%m/%d", "%Y/%d/%m", "%m/%d/%Y", "%d/%m/%Y",
                     "%Y.%m.%d", "%Y.%d.%m", "%m.%d.%Y", "%d.%m.%Y",
@@ -447,6 +492,7 @@ def str_to_frmt(str):
         return date_fmt
     except Exception as e:
         return None
+
 
 def main():
     args = arguments()
