@@ -132,7 +132,7 @@ def export_csv(dataframe, output_name):
         Export given dataframe to csv
     '''
     dataframe.to_csv(output_name + '.csv', encoding='utf-8', index=False,
-                      quotechar='"', quoting=QUOTE_ALL)
+                     header=False, quotechar='"', quoting=QUOTE_ALL)
 
 
 def choose_type_priority(types, field_max):
