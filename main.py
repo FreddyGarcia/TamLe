@@ -16,6 +16,7 @@
 
 import pandas
 import os
+import math
 from csv import QUOTE_ALL
 from datetime import datetime
 from argparse import ArgumentParser
@@ -37,6 +38,7 @@ warnings.filterwarnings('ignore')
 
 ALLOWED_EXTS = ('xls', 'xlsx', 'json', 'xml', 'rdf')
 ERROR_FILE_NAME = 'bad_files.txt'
+SAMPLE_DATA = 150
 
 def dataframe_from_json(filename):
     try:
@@ -107,10 +109,10 @@ def read_file(filename):
     file_type = filename.rpartition('.')[-1]
 
     if file_type in ('xlsx', 'xls') :
-        dataframe = pandas.read_excel(filename)
+        dataframe = pandas.read_excel(filename, dtype=str)
 
     elif file_type == 'csv':
-        dataframe = pandas.read_csv(filename)
+        dataframe = pandas.read_csv(filename, dtype=str)
 
     elif file_type == 'xml':
         dataframe = dataframe_from_xml(filename)
@@ -135,17 +137,12 @@ def export_csv(dataframe, output_name):
                      header=False, quotechar='"', quoting=QUOTE_ALL)
 
 
-def choose_type_priority(types, field_max):
-    '''
-        The columns may look having multple types
-        so we choose the most relevant.
-    '''
-
+def choose_type_priority(types):
     if 'str' in types:
-        return f'VARCHAR({field_max})'
+        return 'VARCHAR'
 
     elif 'float' in types:
-        return f'DECIMAL({field_max})'
+        return 'DECIMAL'
 
     elif 'int' in types:
         return 'INT'
@@ -155,7 +152,18 @@ def choose_type_priority(types, field_max):
         return f'DATETIME {val}'
 
     else:
-        return f'VARCHAR({field_max})'
+        return 'VARCHAR'
+
+
+def to_sql_field(type, field_max=None):
+    '''
+        The columns may look having multple types
+        so we choose the most relevant.
+    '''
+
+    precision = f'({field_max})' if field_max is not None else ''
+
+    return f'{type} {precision}'
 
 
 def guess_str_type(value):
@@ -164,15 +172,19 @@ def guess_str_type(value):
     '''
 
     _str = str(value).strip()
-    # if 'nan' is received (the numpy None value)
-    # there's nothing to do
-    if _str == 'nan':
-        return None
-    elif any([x in _str for x in ('-', '/')]) \
-        and len(_str) > 7 \
-        and len(_str) < 11 \
-        and dateparse(_str) is not None:
-        return f"format '{str_to_frmt(_str)}'"
+
+    try:
+        # if 'nan' is received (the numpy None value)
+        # there's nothing to do
+        if _str == 'nan':
+                return None
+        elif any([x in _str for x in ('-', '/')]) \
+            and len(_str) > 7 \
+            and len(_str) < 11 \
+            and dateparse(_str) is not None:
+            return f"format '{str_to_frmt(_str)}'"
+    except Exception as e:
+        pass
 
     try:
         # trying to figure out value data type
@@ -182,17 +194,17 @@ def guess_str_type(value):
         return 'str'
 
 
-
 def decimal_frmt(value):
     '''
         Based on a decimal value, get the current sql lenght code,
-        so 23.234 is translated as 2,3
+        so 23.234 is translated as 5,3
     '''
-    _str = str(value)
+    _str = str(value).replace('-','')
     i = _str.index('.')
     int_ = len(_str[:i])
     float_ = len(_str[i+1:])
-    cad = f'{int_},{float_}'
+    total_ = int_ + float_
+    cad = f'{total_},{float_}'
     return cad
 
 
@@ -202,38 +214,51 @@ def identify_colummns_types(dataframe):
     '''
 
     _types = []
-    # perform the identification process with first 100 rows
-    df_partial = dataframe[:200]
+    # perform the identification process with first 150 rows
+    df_partial = dataframe[:SAMPLE_DATA]
 
     for column in df_partial:
-        # get type
+        # get types
         types = df_partial[column].apply(lambda x: guess_str_type(x)) \
                                   .drop_duplicates() \
                                   .to_list()
 
-        field_max = 30
-
         try:
-            field_max = int(df_partial[column].str.len().max())
+            values = list(df_partial[column]
+                            .fillna('0')
+                            .sort_values(ascending=False)
+                        )
+
+            max_values =  list(map(lambda x: len(x), values))
+            max_posi = max(max_values)
+            max_index = max_values.index(max_posi)
+            max_value = values[max_index]
+            max_lenght = len(max_value)
         except Exception as e:
             pass
 
-        try:
-            if 'float' in df_partial[column].dtype.name:
-                field_len = df_partial[column].map(str).max()
-                field_max = decimal_frmt(float(field_len))
-        except Exception as e:
-            field_max = len(field_len)
+        type_ = choose_type_priority(types)
 
-        # clean columns
+        if type_ == 'DECIMAL':
+            try:
+                precision = decimal_frmt(max_value)
+            except Exception as e:
+                pass
+
+        elif type_ != 'DATETIME':
+            precision = max_lenght
+
+        else:
+            precision = None
+
+        sql_field = to_sql_field(type_, precision)
+
         column = str(column).replace(' ', '_') \
                             .replace('-', '_') \
                             .replace('.', '') \
                             .replace('?', '')
-        # choose right
-        type_ = choose_type_priority(types, field_max)
 
-        _types.append(f'{column} {type_}')
+        _types.append(f'{column} {sql_field}')
 
     # putting all together
     columns = ',\n\t'.join(_types)
@@ -479,9 +504,10 @@ def str_to_frmt(str):
         try:
             datetime.strptime(str, fmt)
         except ValueError as e:
-            # print(e)
             continue
+
         match.append(fmt)
+        break
 
     try:
         date_fmt = match[0]
