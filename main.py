@@ -17,6 +17,7 @@
 import pandas
 import os
 import math
+import numpy as np
 from csv import QUOTE_ALL
 from datetime import datetime
 from argparse import ArgumentParser
@@ -39,6 +40,12 @@ warnings.filterwarnings('ignore')
 ALLOWED_EXTS = ('xls', 'xlsx', 'json', 'xml', 'rdf')
 ERROR_FILE_NAME = 'bad_files.txt'
 SAMPLE_DATA = 150
+date_expected_format = re_compile(r"^\d{2}(?:\/|\-)\d{2}(?:\/|\-)(?:\d{4}|\d{2})$")
+
+def is_valid_date(str_date):
+    return (date_expected_format
+                .match(str_date) is not None
+        )
 
 def dataframe_from_json(filename):
     try:
@@ -177,11 +184,8 @@ def guess_str_type(value):
         # if 'nan' is received (the numpy None value)
         # there's nothing to do
         if _str == 'nan':
-                return None
-        elif any([x in _str for x in ('-', '/')]) \
-            and len(_str) > 7 \
-            and len(_str) < 11 \
-            and dateparse(_str) is not None:
+            return 'str'
+        elif is_valid_date(_str):
             return f"format '{str_to_frmt(_str)}'"
     except Exception as e:
         pass
@@ -465,7 +469,9 @@ def process_file(title, filename):
     dwn_dest = path_join(title, 'download')
 
     df = read_file(path_join(dwn_dest, filename))
+    df = df.replace({'PrivacySuppressed': np.nan})
 
+    import ipdb; ipdb.set_trace(context=20)
     if df is not None:
         print('\tExporting to csv')
         export_csv(df, path_join(csv_dest, b_name))
@@ -493,12 +499,10 @@ def str_to_frmt(str):
         Based on a datetime, get the current date format,
         so 21/02/2019 is translated as dd/mm/yyyy
     '''
-    date_formats = ["%Y-%m-%d", "%Y-%d-%m", "%m-%d-%Y", "%d-%m-%Y",
-                    "%Y/%m/%d", "%Y/%d/%m", "%m/%d/%Y", "%d/%m/%Y",
-                    "%Y.%m.%d", "%Y.%d.%m", "%m.%d.%Y", "%d.%m.%Y",
-                    "%Y/%m",    "%m/%Y",
-                    "%Y-%m",    "%m-%Y",
-                    "%c", "%x"]
+    date_formats = ["%Y-%m-%d", "%Y-%d-%m", "%m-%d-%Y", "%m-%d-%y",
+                    "%d-%m-%Y", "%Y/%m/%d", "%Y/%d/%m", "%m/%d/%Y",
+                    "%m/%d/%y", "%d/%m/%Y", "%Y.%m.%d", "%Y.%d.%m",
+                    "%m.%d.%Y", "%d.%m.%Y"]
     match = []
     for fmt in date_formats:
         try:
